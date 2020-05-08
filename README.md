@@ -3,7 +3,7 @@
 
 A hardware device which displays the powered and/or up status of a list of servers, with dedicated LEDs for each server.
 
-Built as a 1U rack mount box supporting up to 40 servers. The front panel is designed with the ![Schaeffer tool](https://www.schaeffer-ag.de/en/) and has space for labels to be added to identify the machine each set of LEDs represents.
+Built as a 1U rack mount box supporting up to 40 servers. The front panel is designed with the [Schaeffer tool](https://www.schaeffer-ag.de/en/) and has space for labels to be added to identify the machine each set of LEDs represents.
 
 For each server there are two LEDs, one red and one green.
 
