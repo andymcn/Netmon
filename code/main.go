@@ -5,6 +5,7 @@ import "flag"
 import "fmt"
 import "io/ioutil"
 import "os"
+import "time"
 
 
 func main() {
@@ -59,6 +60,8 @@ func readConfig(filePath string) *configDef {
 // configDef - Config file format definition.
 type configDef struct {
     PowerIP string `json:"power_ip"`
+    PowerDelaySec time.Duration `json:"power_delay_sec"`
+    PingDelaySec time.Duration `json:"ping_delay_sec"`
     Leds []ledDef `json:"leds"`
 }
 
