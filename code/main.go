@@ -11,6 +11,8 @@ import "time"
 func main() {
     test := flag.Bool("test", false, "Test LEDs")
     flag.BoolVar(test, "t", false, "Test LEDs")
+    testAll := flag.Bool("testall", false, "Test all LEDs at once")
+    flag.BoolVar(testAll, "a", false, "Test all LEDs at once")
     flag.Parse()
 
     config := readConfig("config.json")
@@ -23,6 +25,8 @@ func main() {
 
     if *test {
         TestLeds(display)
+    } else if *testAll {
+        TestAllLeds(display)
     } else {
         monitor := CreateMonitor(config, display)
 

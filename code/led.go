@@ -30,6 +30,17 @@ func TestLeds(display *LedDisplay) {
 }
 
 
+// TestAllLeds - Turn on all LEDs, forever.
+func TestAllLeds(display *LedDisplay) {
+    for led := 0; led < LedCount; led++ {
+        display.SetLed(led, LedYellow)
+    }
+
+    // Wait forever.
+    select{}
+}
+
+
 // LED display object.
 
 // CreateDisplay - Create an LED display object.
