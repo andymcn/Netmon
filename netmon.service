@@ -1,0 +1,16 @@
+[Unit]
+Description=Netowrk server monitor
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+WorkingDirectory=/root/Netmon/code/
+ExecStart=/root/Netmon/code/netmon
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s TERM $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+
