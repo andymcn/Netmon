@@ -28,6 +28,17 @@ func CreateMonitor(config *configDef, display *LedDisplay) *Monitor {
 // Run - Run this monitor.
 // Goroutine, never returns.
 func (this *Monitor) Run() {
+    // First turn on all LEDs for 1 second as a test.
+    for i := 0; i < len(this.leds); i++ {
+        this.display.SetLed(i, LedYellow)
+    }
+
+    time.Sleep(time.Second)
+
+    for i := 0; i < len(this.leds); i++ {
+        this.display.SetLed(i, LedOff)
+    }
+
     // Monitor power.
     go this.monitorPower()
 
