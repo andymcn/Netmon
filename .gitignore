@@ -1,2 +1,6 @@
 # Executable
 netmon
+
+# Visual Studio working directories
+.vs
+Debug
