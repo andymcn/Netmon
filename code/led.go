@@ -20,13 +20,24 @@ var _colGpios [ColumnCount]int = [ColumnCount]int{24, 25, 8, 7}
 func TestLeds(display *LedDisplay) {
     for true {
         for led := 0; led < LedCount; led++ {
-            display.Update(led, LedRed)
+            display.SetLed(led, LedRed)
             time.Sleep(time.Second)
-            display.Update(led, LedGreen)
+            display.SetLed(led, LedGreen)
             time.Sleep(time.Second)
-            display.Update(led, LedOff)
+            display.SetLed(led, LedOff)
         }
     }
+}
+
+
+// TestAllLeds - Turn on all LEDs, forever.
+func TestAllLeds(display *LedDisplay) {
+    for led := 0; led < LedCount; led++ {
+        display.SetLed(led, LedYellow)
+    }
+
+    // Wait forever.
+    select{}
 }
 
 
@@ -35,8 +46,6 @@ func TestLeds(display *LedDisplay) {
 // CreateDisplay - Create an LED display object.
 func CreateDisplay() *LedDisplay {
     var display LedDisplay
-//    display.redState = [][]bool{{false}, {false}}
-//    display.greenState = [][]bool{{true, true}, {false, true}}
     display.column = 0
     display.updateChannel = make(chan updateInfo, 10)
 
@@ -45,9 +54,24 @@ func CreateDisplay() *LedDisplay {
 }
 
 
-// Update - Send a machine state update to this display.
-func (this *LedDisplay) Update(machine int, colour int) {
-    update := updateInfo{machine: machine, colour: colour}
+// SetLed - Set the specified LED to the given colour.
+func (this *LedDisplay) SetLed(ledIndex int, colour int) {
+    // Convert colour to RG values.
+    redState := (colour == LedRed ) || (colour == LedYellow)
+    greenState := (colour == LedGreen) || (colour == LedYellow)
+
+    // Map machine to LEDs.
+    column := ledIndex % ColumnCount
+    row := ledIndex / ColumnCount
+
+    // Build an update message to send.
+    var update updateInfo
+    update.column = column
+    update.row = row
+    update.redState = redState
+    update.greenState = greenState
+
+    // And send the update.
     this.updateChannel<- update
 }
 
@@ -79,7 +103,8 @@ func (this *LedDisplay) run() {
     for {
         select {
         case update := <-this.updateChannel:
-            this.setMachineColour(update.machine, update.colour)
+            this.redState[update.row][update.column] = update.redState
+            this.greenState[update.row][update.column] = update.greenState
 
         case <-ticker.C:
             // Time to display the next column of LEDs.
@@ -100,27 +125,12 @@ func (this *LedDisplay) run() {
 }
 
 
-// setMachineColour - Set the specified machine LED to the specified colour.
-func (this *LedDisplay) setMachineColour(machine int, colour int) {
-    // Convert colour to RG values.
-    redState := (colour == LedRed ) || (colour == LedYellow)
-    greenState := (colour == LedGreen) || (colour == LedYellow)
-
-    // Map machine to LEDs.
-    // TODO: Do this better.
-    column := machine % ColumnCount
-    row := machine / ColumnCount
-
-    // Set LED states.
-    this.redState[row][column] = redState
-    this.greenState[row][column] = greenState
-}
-
-
-// updateInfo - Status update for a single machine.
+// updateInfo - Status update for a single LED.
 type updateInfo struct {
-    machine int
-    colour int
+    row int
+    column int
+    redState bool
+    greenState bool
 }
 
 

@@ -5,11 +5,14 @@ import "flag"
 import "fmt"
 import "io/ioutil"
 import "os"
+import "time"
 
 
 func main() {
     test := flag.Bool("test", false, "Test LEDs")
     flag.BoolVar(test, "t", false, "Test LEDs")
+    testAll := flag.Bool("testall", false, "Test all LEDs at once")
+    flag.BoolVar(testAll, "a", false, "Test all LEDs at once")
     flag.Parse()
 
     config := readConfig("config.json")
@@ -22,6 +25,8 @@ func main() {
 
     if *test {
         TestLeds(display)
+    } else if *testAll {
+        TestAllLeds(display)
     } else {
         monitor := CreateMonitor(config, display)
 
@@ -59,6 +64,8 @@ func readConfig(filePath string) *configDef {
 // configDef - Config file format definition.
 type configDef struct {
     PowerIP string `json:"power_ip"`
+    PowerDelaySec time.Duration `json:"power_delay_sec"`
+    PingDelaySec time.Duration `json:"ping_delay_sec"`
     Leds []ledDef `json:"leds"`
 }
 

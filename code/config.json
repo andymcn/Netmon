@@ -1,0 +1,16 @@
+{
+    "power_ip": "192.168.1.2",
+    "power_delay_sec": 1,
+    "ping_delay_sec": 5,
+    "leds": [
+        { "name": "moya", "ip": "192.168.1.2" },
+        { "name": "b03", "ip": "192.168.1.103" },
+        { "name": "web", "ip": "192.168.1.4" },
+        { "name": "hymn", "ip":  "192.168.1.6" },
+        {},
+        { "name": "power3", "ip": "192.168.1.95" },
+        { "name": "power4", "ip":  "192.168.1.96" },
+        { "name": "clustermatic", "ip": "192.168.1.1" }
+    ]
+}
+
