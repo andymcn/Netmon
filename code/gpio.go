@@ -2,80 +2,63 @@ package main
 
 import "fmt"
 import "os"
+import "syscall"
+import "unsafe"
 
 
-// Functions to control GPIOs via the /sys/ interface.
+// Functions to control GPIOs via direct memory mapped registers.
 
-// GpioExport - Claim the specified GPIO for use.
-// Each exported pin must be unexported again before any other process may use it.
-func GpioExport(pin int) {
-//    fd, err := os.Open("/sys/class/gpio/export")
-    fd, err := os.OpenFile("/sys/class/gpio/export", os.O_WRONLY, 0)
-
-    if err != nil {
-        fmt.Printf("Failure to open export file for %d, %v\n", pin, err)
-        return
-    }
-
-    _, err = fmt.Fprintf(fd, "%d", pin)
+// GpioInit - Initialise GPIO control.
+func GpioInit() {
+    memFd, err := os.OpenFile("/dev/mem", os.O_RDWR, 0)
 
     if err != nil {
-        fmt.Printf("Failure to export %d, %v\n", pin, err)
+        fmt.Printf("Can't open /dev/mem, %v\n", err)
+        os.Exit(2)
     }
 
-    fd.Close()
-}
-
-
-// GpioUnexport - Release the specified GPIO so other processes can use it.
-func GpioUnexport(pin int) {
-    fd, err := os.OpenFile("/sys/class/gpio/unexport", os.O_WRONLY, 0)
+    mmap, err := syscall.Mmap(int(memFd.Fd()), gpioBase, blockSize,
+        syscall.PROT_READ | syscall.PROT_WRITE, syscall.MAP_SHARED)
 
     if err != nil {
-        fmt.Printf("Failure to open unexport file for %d, %v\n", pin, err)
-        return
+        fmt.Printf("Couldn't mmap, %v\n", err)
+        os.Exit(2)
     }
 
-    _, err = fmt.Fprintf(fd, "%d", pin)
+    _gpioMem = (*[mapSize]int)(unsafe.Pointer(&mmap[0]))
 
-    if err != nil {
-        fmt.Printf("Failure to unexport %d, %v\n", pin, err)
-    }
-
-    fd.Close()
+    memFd.Close()
 }
 
 
 // GpioDirIn - Set the direction of the specified GPIO.
-func GpioDirIn(pin int, in bool) {
-    sysFileName := fmt.Sprintf("/sys/class/gpio/gpio%d/direction", pin)
-    fd, err := os.OpenFile(sysFileName, os.O_WRONLY, 0)
-
-    if err != nil {
-        fmt.Printf("Failure to set direction %d->%v, %v\n", pin, in, err)
-        return
+func GpioDirIn(pin uint, in bool) {
+    if in {
+        _gpioMem[pin / 10] &= ^(7 << (3 * (pin % 10)))
+    } else {
+        // Have to set pin to in before setting it to out.
+        _gpioMem[pin / 10] &= ^(7 << (3 * (pin % 10)))
+        _gpioMem[pin / 10] |= 1 << (3 * (pin % 10))
     }
-
-    dir := "out"
-    if in { dir = "in" }
-    fmt.Fprintf(fd, dir)
-    fd.Close()
 }
 
 
-// GpioWrite - Set the specified GPIO to the specified value.
-func GpioWrite(pin int, on bool) {
-    sysFileName := fmt.Sprintf("/sys/class/gpio/gpio%d/value", pin)
-    fd, err := os.OpenFile(sysFileName, os.O_WRONLY, 0)
-
-    if err != nil {
-        fmt.Printf("Failure to set value %d->%v, %v\n", pin, on, err)
-        return
+// GpioWrite - Set the specified GPIO to the given state.
+func GpioWrite(pin uint, on bool) {
+    if on {
+        _gpioMem[7] =  1 << pin
+    } else {
+        _gpioMem[10] =  1 << pin
     }
-
-    value := "0"
-    if on { value = "1" }
-    fmt.Fprintf(fd, value)
-    fd.Close()
 }
+
+
+// Internals.
+
+const bcm2708Peribase = 0x3F000000  // Raspberry Pi 3.
+const gpioBase = bcm2708Peribase + 0x200000
+const mapSize = 1024
+const blockSize = 4 * mapSize
+
+var _gpioMem *[mapSize]int
 
