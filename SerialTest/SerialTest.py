@@ -28,17 +28,17 @@ def main():
 
     # Default values.
     serial_device_name = 'COM7'
-    
+
     if (hasattr(args, 'serial') and args.serial):   serial_device_name = args.serial
 
     # Open serial port.
     ser = serial.Serial(serial_device_name)
-    ser.baudrate = 125000
+    ser.baudrate = 9600#125000
     ser.parity = serial.PARITY_EVEN
     ser.bytesize = 8
     ser.stopbits = 1
     single_byte = bytearray(1)
-    
+
     print('Enter hex bytes.')
     print('Type quit to exit.')
 
@@ -53,7 +53,8 @@ def main():
         value = int('0x' + line, base=16)
         single_byte[0] = value
         ser.write(single_byte)
-    
+
 
 if __name__ == '__main__':
     main()
+
