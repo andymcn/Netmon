@@ -9,15 +9,15 @@ import "time"
 // Monitor object.
 
 // CreateMonitor - Create a monitor object and start it running.
-func CreateMonitor(config *configDef, display *LedDisplay) *Monitor {
+func CreateMonitor(config *configDef, verbose bool) *Monitor {
     var p Monitor
+    p.verbose = verbose
     p.powerState = make([]bool, LedCount)
     p.pingState = make([]bool, LedCount)
     p.leds = config.Leds
     p.powerIP = config.PowerIP
     p.powerDelaySec = config.PowerDelaySec
     p.pingDelaySec = config.PingDelaySec
-    p.display = display
     p.powerChannel = make(chan []bool, 10)
     p.pingChannel = make(chan pingInfo, 100)
 
@@ -30,13 +30,13 @@ func CreateMonitor(config *configDef, display *LedDisplay) *Monitor {
 func (this *Monitor) Run() {
     // First turn on all LEDs for 1 second as a test.
     for i := 0; i < len(this.leds); i++ {
-        this.display.SetLed(i, LedYellow)
+        SetLed(i, LedYellow)
     }
 
     time.Sleep(time.Second)
 
     for i := 0; i < len(this.leds); i++ {
-        this.display.SetLed(i, LedOff)
+        SetLed(i, LedOff)
     }
 
     // Monitor power.
@@ -64,13 +64,11 @@ type Monitor struct {
     pingState []bool
 
     // Configuration.
+    verbose bool
     leds []ledDef
     powerDelaySec time.Duration
     pingDelaySec time.Duration
     powerIP string
-
-    // Helper objects.
-    display *LedDisplay
 
     // Channels for reporting determined state ready to be collated.
     powerChannel chan []bool
@@ -178,6 +176,7 @@ func ping(ip string) bool {
 }
 
 
+
 // collate - Collate together all of our determined information.
 // Goroutine, never returns.
 func (this *Monitor) collate() {
@@ -187,9 +186,10 @@ func (this *Monitor) collate() {
             // Update all LEDs.
             this.powerState = power
             for i := 0; i < LedCount; i++ {
-                if this.leds[i].Name != "" {
-                    colour := collateLed(power[i], this.pingState[i])
-                    this.display.SetLed(i, colour)
+                name := this.leds[i].Name
+                if name != "" {
+                    colour := collateLed(power[i], this.pingState[i], name, this.verbose)
+                    SetLed(i, colour)
                 }
             }
 
@@ -198,26 +198,30 @@ func (this *Monitor) collate() {
             ledIndex := status.led
             pingable := status.pingable
             this.pingState[ledIndex] = pingable
-            colour := collateLed(this.powerState[ledIndex], pingable)
-            this.display.SetLed(ledIndex, colour)
+            name := this.leds[ledIndex].Name
+            colour := collateLed(this.powerState[ledIndex], pingable, name, this.verbose)
+            SetLed(ledIndex, colour)
         }
     }
 }
 
 
 // collateLed - Determine the colour for an LED based on the given determined information.
-func collateLed(power bool, pingable bool) int {
+func collateLed(power bool, pingable bool, name string, verbose bool) int {
     if pingable {
         // Server is responding.
+        if verbose { fmt.Printf("Server %s responding\n", name) }
         return LedGreen
     }
 
     if power {
         // Server is powered on but not responding.
+        if verbose { fmt.Printf("Server %s powered on\n", name) }
         return LedRed
     }
 
     // Machine is powered off.
+    if verbose { fmt.Printf("Server %s not found\n", name) }
     return LedOff
 }
 

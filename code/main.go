@@ -5,7 +5,9 @@ import "flag"
 import "fmt"
 import "io/ioutil"
 import "os"
+//import "syscall"
 import "time"
+//import "unsafe"
 
 
 func main() {
@@ -13,28 +15,24 @@ func main() {
     flag.BoolVar(test, "t", false, "Test LEDs")
     testAll := flag.Bool("testall", false, "Test all LEDs at once")
     flag.BoolVar(testAll, "a", false, "Test all LEDs at once")
+    verbose := flag.Bool("verbose", false, "Verbose")
+    flag.BoolVar(verbose, "v", false, "Verbose")
     flag.Parse()
 
     config := readConfig("config.json")
 
-    // First release pins, in case some other process left them locked.
-    FreePins()
-    InitPins()
-
-    display := CreateDisplay()
+    InitLed(*verbose)
 
     if *test {
-        TestLeds(display)
+        TestLeds()
     } else if *testAll {
-        TestAllLeds(display)
+        TestAllLeds()
     } else {
-        monitor := CreateMonitor(config, display)
+        monitor := CreateMonitor(config, *verbose)
 
         // We don't need the main thread any more, so let the monitor use it.
         monitor.Run()
     }
-
-    FreePins()
 }
 
 
@@ -55,6 +53,12 @@ func readConfig(filePath string) *configDef {
     err = json.Unmarshal(src, &config)
     if err != nil {
         fmt.Printf("Failure to parse config file, %v\n", err)
+        os.Exit(1)
+    }
+
+    if len(config.Leds) != LedCount {
+        fmt.Printf("Incorrect number of machines in config, found %d, need %d.\n",
+            len(config.Leds), LedCount)
         os.Exit(1)
     }
 
