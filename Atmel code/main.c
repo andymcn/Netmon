@@ -1,9 +1,17 @@
 /* Netmon LED drive board.
 
-We display a grid of 20 columns of 4 rows of LEDs.
+We display a grid of 20 columns of 2 rows of tri-colour LEDs, arranged as 20 columns of 4 rows of uni-colour LEDs.
 
-Commands are received over a serial link to turn on and off individual LEDs. Each byte is a complete command. The most
-significant bits tells us to turn off (0) or on (1) one LED. The remaining 7 bits specify the LED.
+Commands are received over a serial link to turn on and off individual LEDs. Each byte is a complete command for one
+tri-colour LED.
+
+The most significant 2 bits tell us to set LED to:
+    0x00 - Off
+    0x40 - Red
+    0x80 - Green
+    0xC0 - Yellow
+
+The least significant 6 bits specify the LED to adjust.
 
 At start of day we turn on all LEDs for a second or two to check they function. Then all LEDs are turned off until
 we're told otherwise.
@@ -24,11 +32,11 @@ static struct {
     uint8_t c;
     uint8_t d;
 } _columnMap[COLUMN_COUNT] = {
-    { 0xFF, 0xFF, 0xE0 },   { 0xFF, 0xFF, 0xD0 },   { 0xFF, 0xFF, 0xB0 },   { 0xFF, 0xFF, 0x70 },   // 0..3.
-    { 0xFE, 0xFF, 0xF0 },   { 0xFD, 0xFF, 0xF0 },   { 0xFB, 0xFF, 0xF0 },   { 0xF7, 0xFF, 0xF0 },   // 4..7.
-    { 0xEF, 0xFF, 0xF0 },   { 0xDF, 0xFF, 0xF0 },   { 0xBF, 0xFF, 0xF0 },   { 0x7F, 0xFF, 0xF0 },   // 8..11.
-    { 0xFF, 0xFE, 0xF0 },   { 0xFF, 0xFD, 0xF0 },   { 0xFF, 0xFB, 0xF0 },   { 0xFF, 0xF7, 0xF0 },   // 12..15.
-    { 0xFF, 0xEF, 0xF0 },   { 0xFF, 0xDF, 0xF0 },   { 0xFF, 0xBF, 0xF0 },   { 0xFF, 0x7F, 0xF0 }    // 16..19.
+    { 0x00, 0x00, 0x10 },   { 0x00, 0x00, 0x20 },   { 0x00, 0x00, 0x40 },   { 0x00, 0x00, 0x80 },   // 0..3.
+    { 0x00, 0x01, 0x00 },   { 0x00, 0x02, 0x00 },   { 0x00, 0x04, 0x00 },   { 0x00, 0x08, 0x00 },   // 4..7.
+    { 0x00, 0x10, 0x00 },   { 0x00, 0x20, 0x00 },   { 0x00, 0x40, 0x00 },   { 0x00, 0x80, 0x00 },   // 8..11.
+    { 0x01, 0x00, 0x00 },   { 0x02, 0x00, 0x00 },   { 0x04, 0x00, 0x00 },   { 0x08, 0x00, 0x00 },   // 12..15.
+    { 0x10, 0x00, 0x00 },   { 0x20, 0x00, 0x00 },   { 0x40, 0x00, 0x00 },   { 0x80, 0x00, 0x00 }    // 16..19.
 };
 
 
@@ -59,19 +67,19 @@ void init(void)
     DDRD = 0xFF;  // D0..1 are serial port. D2..3 unused. D4..7 drive columns 0..3.
 
     // Set all LED drive pins to inactive.
-    PORTB = 0;
-    PORTA = 0xFF;
-    PORTC = 0xFF;
-    PORTD = 0xF0;
+    PORTB = 0xF;
+    PORTA = 0; //0xFF;
+    PORTC = 0; //0xFF;
+    PORTD = 0; //0xF0;
 
     // Initialise UART.
-    // 125kbaud, 8 bit data, even parity, 1 stop bit.
+    // 125kbaud, 8 bit data, no parity, 1 stop bit.
     // We only need RX interupts, we never transmit.
     UCSR0A = 0;
     UCSR0B = 0x98;
-    UCSR0C = 0x26;
+    UCSR0C = 6; //0x26;
     UBRR0H = 0;
-    UBRR0L = 3;
+    UBRR0L = 51;
 
     // Set up 1kHz tick timer.
     TCCR0A = 2; // Set up CTC0.
@@ -80,9 +88,9 @@ void init(void)
     OCR0A = 124; // ~1kHz tick rate (8MHz / 64 prescale / 125 (OCR0A + 1))
     TIMSK0 = 2; // Enable CTC0 interrupts.
 
-    // Initialise LED state.
+    // Initialise LED state. Row data is active low.
     for(uint8_t i = 0; i < COLUMN_COUNT; i++)
-        _rows[i] = 0;
+        _rows[i] = 0xF;
 
     // Start with column 0.
     _column = 0;
@@ -108,8 +116,8 @@ int main(void)
 // Called roughly every 1 millisecond.
 ISR(TIMER0_COMPA_vect)
 {
-    // First stop driving the LEDs in the current column.
-    PORTB = 0;
+    // First stop driving the LEDs in the current column (active low).
+    PORTB = 0xF;
 
     // Move on to the next grid column.
     _column++;
@@ -125,7 +133,7 @@ ISR(TIMER0_COMPA_vect)
 
     if(_start_check > 0) {
         // We're still displaying all LEDs at start of day.
-        PORTB = 0xF;
+        PORTB = 0;
         _start_check--;
     }
 }
@@ -136,18 +144,33 @@ ISR(USART0_RX_vect)
 {
     // Get command and decode.
     uint8_t command = UDR0;
-    bool on = (command & 0x80) != 0;
-    uint8_t led = command & 0x7F;
+
+#if 0
+    static uint8_t count = 0;
+    _rows[4] = command & 0xF;
+    _rows[5] = (command >> 4) & 0xF;
+    count++;
+    _rows[6] = count & 0xF;
+    _rows[7] = (count >> 4) & 0xF;
+#else
+    uint8_t colour = command & 0xC0;
+    uint8_t led = command & 0x3F;
 
     // LEDs are numbered from 0, down the column, then across the rows.
-    uint8_t column = led >> 2;
-    uint8_t row = led & 3;
-    uint8_t row_value = 1 << row;
+    uint8_t column = led >> 1;
+    uint8_t row = led & 1;
 
-    // Change state of bit in row for specified LED. Row values are active high.
-    if(on) {
-        _rows[column] |= row_value;
-    } else {
-        _rows[column] &= ~row_value;
+    // Change state of bits in row for specified LED. Row values are active low.
+    uint8_t row_value = colour >> 6;
+    uint8_t row_mask = 3;
+
+    if(row == 1)
+    {
+        row_value <<= 2;
+        row_mask <<= 2;
     }
+
+    _rows[column] |= row_mask;
+    _rows[column] &= ~row_value;
+#endif
 }
