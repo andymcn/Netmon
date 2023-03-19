@@ -5,9 +5,7 @@ import "flag"
 import "fmt"
 import "io/ioutil"
 import "os"
-//import "syscall"
 import "time"
-//import "unsafe"
 
 
 func main() {
@@ -19,7 +17,7 @@ func main() {
     flag.BoolVar(verbose, "v", false, "Verbose")
     flag.Parse()
 
-    config := readConfig("config.json")
+    config := readConfig("/root/Netmon/config.json")
 
     InitLed(*verbose)
 
