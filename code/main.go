@@ -65,8 +65,7 @@ func readConfig(filePath string) *configDef {
 
 // configDef - Config file format definition.
 type configDef struct {
-    PowerIP string `json:"power_ip"`
-    PowerDelaySec time.Duration `json:"power_delay_sec"`
+    OffRedSec time.Duration `json:"off_red_sec"`
     PingDelaySec time.Duration `json:"ping_delay_sec"`
     Leds []ledDef `json:"leds"`
 }
@@ -75,6 +74,6 @@ type configDef struct {
 type ledDef struct {
     Name string `json:"name"`
     IP string `json:"ip"`
-    RemotePower bool `json:"remote_power"`
+    OffError bool `json:"off_error"`
 }
 

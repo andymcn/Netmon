@@ -1,6 +1,5 @@
 package main
 
-import "encoding/json"
 import "fmt"
 import "os/exec"
 import "time"
@@ -11,15 +10,23 @@ import "time"
 // CreateMonitor - Create a monitor object and start it running.
 func CreateMonitor(config *configDef, verbose bool) *Monitor {
     var p Monitor
+    p.ledCount = len(config.Leds)
     p.verbose = verbose
-    p.powerState = make([]bool, LedCount)
-    p.pingState = make([]bool, LedCount)
-    p.leds = config.Leds
-    p.powerIP = config.PowerIP
-    p.powerDelaySec = config.PowerDelaySec
+    p.offRedSec = config.OffRedSec * time.Second
     p.pingDelaySec = config.PingDelaySec
-    p.powerChannel = make(chan []bool, 10)
     p.pingChannel = make(chan pingInfo, 100)
+
+    p.machines = make(map[int]*machineState)
+    for i, led := range config.Leds {
+        if led.Name != "" {
+            var m machineState
+            m.name = led.Name
+            m.ledNo = i
+            m.ip = led.IP
+            m.offError = led.OffError
+            p.machines[i] = &m
+        }
+    }
 
     return &p
 }
@@ -29,25 +36,19 @@ func CreateMonitor(config *configDef, verbose bool) *Monitor {
 // Goroutine, never returns.
 func (this *Monitor) Run() {
     // First turn on all LEDs for 1 second as a test.
-    for i := 0; i < len(this.leds); i++ {
+    for i := 0; i < this.ledCount; i++ {
         SetLed(i, LedYellow)
     }
 
     time.Sleep(time.Second)
 
-    for i := 0; i < len(this.leds); i++ {
+    for i := 0; i < this.ledCount; i++ {
         SetLed(i, LedOff)
     }
 
-    // Monitor power.
-    go this.monitorPower()
-
     // Monitor servers for defined LEDs.
-    for i, led := range this.leds {
-        if led.Name != "" {
-            // This LED is defined.
-            go this.monitorServer(i)
-        }
+    for i, led := range this.machines {
+        go this.monitorServer(i, led.ip)
     }
 
     // Now process all the resulting info.
@@ -59,20 +60,27 @@ func (this *Monitor) Run() {
 
 // Monitor - Monitor class state.
 type Monitor struct {
-    // State we're determined.
-    powerState []bool
-    pingState []bool
+    // State of machines.
+    machines map[int]*machineState  // Indexed by led number.
 
     // Configuration.
+    ledCount int
     verbose bool
-    leds []ledDef
-    powerDelaySec time.Duration
+    offRedSec time.Duration
     pingDelaySec time.Duration
-    powerIP string
 
-    // Channels for reporting determined state ready to be collated.
-    powerChannel chan []bool
+    // Channel for reporting determined state ready to be collated.
     pingChannel chan pingInfo
+}
+
+// The state we have for one machine.
+type machineState struct {
+    name string
+    ledNo int
+    ip string
+    pingable bool
+    offError bool
+    offTime time.Time
 }
 
 // pingInfo - Ping status information for a single machine.
@@ -82,83 +90,14 @@ type pingInfo struct {
 }
 
 
-// monitorPower - Monitor remote power control and report via the power channel.
-// Go routine, never returns.
-func (this *Monitor) monitorPower() {
-    for true {
-        // Get the current remote power status.
-        powerMap := getPower(this.powerIP)
-
-        // Extract an LED indexed array from the map we've got.
-        // It may be that not all servers are on remote power. For any servers that aren't, we want
-        // a red LED if that server is unpingable. We can trivially get that behaviour by treating
-        // any server not on remote power as if it were on remote power and turned on. Therefore,
-        // we default all remote power channels to be on, unless we're told they're not.
-        status := make([]bool, LedCount)
-        for i := 0; i < LedCount; i++ {
-            status[i] = true
-        }
-
-        for name, state := range powerMap {
-            if !state {
-                // Server is remote powered off, mark its remote power channel as such.
-                // Note that there might not be an LED defined for this server, that's fine, we'll
-                // just ignore it.
-                for i, led := range this.leds {
-                    if led.Name == name {
-                        // This is the led for this remote power channel.
-                        status[i] = false
-                        break
-                    }
-                }
-            }
-        }
-
-        // Report our status.
-        this.powerChannel <- status
-
-        // Wait a bit, then do it again.
-        time.Sleep(this.powerDelaySec * time.Second)
-    }
-}
-
-
-// getPower - Get the remote power status of all machines.
-func getPower(powerIP string) map[string]bool {
-    dest := fmt.Sprintf("power@%s", powerIP)
-
-    out, err := exec.Command("ssh", dest, "power", "status", "-j").Output()
-    if err != nil {
-        fmt.Printf("Failure to get power status: %v\n", err)
-        return nil
-    }
-
-    var status powerRawInfo
-    err = json.Unmarshal(out, &status)
-    if err != nil {
-        fmt.Printf("Failure parsing power status: %v\n", err)
-        fmt.Printf("%s\n", string(out))
-        return nil
-    }
-
-    return status.Power
-}
-
-
-// powerRawInfo - Format of remote power status raw information.
-type powerRawInfo struct {
-    Power map[string]bool `json:"power"`
-}
-
-
 // monitorServer - Monitor whether the specified machine is pingable.
 // Goroutine, never returns.
-func (this *Monitor) monitorServer(led int) {
+func (this *Monitor) monitorServer(led int, ip string) {
     for true {
         // See if the machine is pingable.
         var status pingInfo
         status.led = led
-        status.pingable = ping(this.leds[led].IP)
+        status.pingable = ping(ip)
 
         // Report our status.
         this.pingChannel <- status
@@ -176,52 +115,56 @@ func ping(ip string) bool {
 }
 
 
-
 // collate - Collate together all of our determined information.
 // Goroutine, never returns.
 func (this *Monitor) collate() {
     for true {
-        select {
-        case power := <-this.powerChannel:
-            // Update all LEDs.
-            this.powerState = power
-            for i := 0; i < LedCount; i++ {
-                name := this.leds[i].Name
-                if name != "" {
-                    colour := collateLed(power[i], this.pingState[i], name, this.verbose)
-                    SetLed(i, colour)
-                }
-            }
+        status := <-this.pingChannel
 
-        case status := <-this.pingChannel:
-            // Update the single corresponding LED.
-            ledIndex := status.led
-            pingable := status.pingable
-            this.pingState[ledIndex] = pingable
-            name := this.leds[ledIndex].Name
-            colour := collateLed(this.powerState[ledIndex], pingable, name, this.verbose)
-            SetLed(ledIndex, colour)
-        }
+        // Update the single corresponding LED.
+        ledIndex := status.led
+        pingable := status.pingable
+
+        machine := this.machines[ledIndex]
+        colour := machine.collate(pingable, this.offRedSec, this.verbose)
+        SetLed(ledIndex, colour)
     }
 }
 
 
-// collateLed - Determine the colour for an LED based on the given determined information.
-func collateLed(power bool, pingable bool, name string, verbose bool) int {
+// collate - Collate information for this machine.
+// Returns the colour this machine's LED should be.
+func (this *machineState) collate(pingable bool, offRedSec time.Duration, verbose bool) (colour int) {
     if pingable {
-        // Server is responding.
-        if verbose { fmt.Printf("Server %s responding\n", name) }
+        // Machine is responding.
+        if verbose { fmt.Printf("Server %s responding\n", this.name) }
+        this.pingable = true
         return LedGreen
     }
 
-    if power {
-        // Server is powered on but not responding.
-        if verbose { fmt.Printf("Server %s powered on\n", name) }
+    // Machine is not responding.
+    if this.pingable {
+        // We just became unpingable, set off timestamp.
+        if verbose { fmt.Printf("Server %s turned off\n", this.name) }
+        this.offTime = time.Now()
+        this.pingable = false
+    }
+
+    if this.offError {
+        // Machine not responding is an error.
+        if verbose { fmt.Printf("Server %s is off, which is an error\n", this.name) }
         return LedRed
     }
 
-    // Machine is powered off.
-    if verbose { fmt.Printf("Server %s not found\n", name) }
+    offForSec := time.Now().Sub(this.offTime)
+    if offForSec < offRedSec {
+        // Machine was turned off recently.
+        if verbose { fmt.Printf("Server %s recently turned off\n", this.name) }
+        return LedRed
+    }
+
+    // Machine has been off for a while.
+    if verbose { fmt.Printf("Server %s not found\n", this.name) }
     return LedOff
 }
 
